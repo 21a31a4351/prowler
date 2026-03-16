@@ -25,22 +25,29 @@ class ECS(AWSService):
         self.__threading_call__(self._describe_services, self.clusters.values())
 
     def _list_task_definitions(self, regional_client):
-        logger.info("ECS - Listing Task Definitions...")
+        logger.info("ECS - Listing Task Definitions (Latest Revision Only)...")
         try:
-            list_ecs_paginator = regional_client.get_paginator("list_task_definitions")
-            for page in list_ecs_paginator.paginate():
-                for task_definition in page["taskDefinitionArns"]:
-                    if not self.audit_resources or (
-                        is_resource_filtered(task_definition, self.audit_resources)
-                    ):
-                        self.task_definitions[task_definition] = TaskDefinition(
-                            # we want the family name without the revision
-                            name=sub(":.*", "", task_definition.split("/")[-1]),
-                            arn=task_definition,
-                            revision=task_definition.split(":")[-1],
-                            region=regional_client.region,
-                            environment_variables=[],
-                        )
+            families_paginator = regional_client.get_paginator("list_task_definition_families")
+            for family_page in families_paginator.paginate(status="ACTIVE"):
+                for family in family_page["families"]:
+                    response = regional_client.list_task_definitions(
+                        familyPrefix=family,
+                        sort="DESC",
+                        maxResults=1,
+                        status="ACTIVE"
+                    )
+                    if response["taskDefinitionArns"]:
+                        task_definition = response["taskDefinitionArns"][0]
+                        if not self.audit_resources or (
+                            is_resource_filtered(task_definition, self.audit_resources)
+                        ):
+                            self.task_definitions[task_definition] = TaskDefinition(
+                                name=sub(":.*", "", task_definition.split("/")[-1]),
+                                arn=task_definition,
+                                revision=task_definition.split(":")[-1],
+                                region=regional_client.region,
+                                environment_variables=[],
+                            )
         except Exception as error:
             logger.error(
                 f"{regional_client.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
