@@ -127,6 +127,7 @@ class ECS(AWSService):
                         launch_type=service_desc.get("launchType", ""),
                         platform_version=service_desc.get("platformVersion", ""),
                         platform_family=service_desc.get("platformFamily", ""),
+                        task_definition_arn=service_desc.get("taskDefinition", ""),
                         tags=service_desc.get("tags", []),
                     )
                     for task_set in service_desc.get("taskSets", []):
@@ -221,6 +222,7 @@ class Service(BaseModel):
     platform_version: Optional[str]
     platform_family: Optional[str]
     assign_public_ip: Optional[bool]
+    task_definition_arn: Optional[str] = ""
     tags: Optional[list] = []
 
 
