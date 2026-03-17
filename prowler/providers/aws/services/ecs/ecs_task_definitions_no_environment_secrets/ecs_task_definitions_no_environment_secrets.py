@@ -11,7 +11,21 @@ class ecs_task_definitions_no_environment_secrets(Check):
         secrets_ignore_patterns = ecs_client.audit_config.get(
             "secrets_ignore_patterns", []
         )
-        for task_definition in ecs_client.task_definitions.values():
+
+        # Collect only task definition ARNs that are actually used by ECS services
+        used_task_definition_arns = set()
+        for service in ecs_client.services.values():
+            task_definition_arn = getattr(service, "task_definition_arn", "")
+            if task_definition_arn:
+                used_task_definition_arns.add(task_definition_arn)
+
+        for task_definition_arn in used_task_definition_arns:
+            task_definition = ecs_client.task_definitions.get(task_definition_arn)
+
+            # Skip if for some reason the task definition is not present
+            if not task_definition:
+                continue
+
             report = Check_Report_AWS(
                 metadata=self.metadata(), resource=task_definition
             )
@@ -25,6 +39,7 @@ class ecs_task_definitions_no_environment_secrets(Check):
                 if container.environment:
                     dump_env_vars = {}
                     original_env_vars = []
+
                     for env_var in container.environment:
                         dump_env_vars.update({env_var.name: env_var.value})
                         original_env_vars.append(env_var.name)
@@ -37,6 +52,7 @@ class ecs_task_definitions_no_environment_secrets(Check):
                             "detect_secrets_plugins",
                         ),
                     )
+
                     if detect_secrets_output:
                         secrets_string = ", ".join(
                             [
@@ -47,9 +63,11 @@ class ecs_task_definitions_no_environment_secrets(Check):
                         container_secrets_found.append(
                             f"Secrets in container {container.name} -> {secrets_string}"
                         )
+
                 if container_secrets_found:
                     report.status = "FAIL"
                     extended_status_parts.extend(container_secrets_found)
+
             if report.status == "FAIL":
                 report.status_extended = (
                     f"Potential secrets found in ECS task definition {task_definition.name} with revision {task_definition.revision}: "
@@ -57,7 +75,10 @@ class ecs_task_definitions_no_environment_secrets(Check):
                     + "."
                 )
             else:
-                report.status_extended = f"No secrets found in variables of ECS task definition {task_definition.name} with revision {task_definition.revision}."
+                report.status_extended = (
+                    f"No secrets found in variables of ECS task definition {task_definition.name} with revision {task_definition.revision}."
+                )
+
             findings.append(report)
 
         return findings
